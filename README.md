@@ -46,3 +46,7 @@ Um teste com um modelo do Microsoft Foundry:
 Um teste com um modelo da Google acessado via APISIX (AI Gateway):
 
 ![Testes com Gemini](img/vscode-04.png)
+
+Trace gerado no Grafana Tempo:
+
+![Trace no Grafana Tempo com uma interação via chat](img/grafana-tempo-01.png)
