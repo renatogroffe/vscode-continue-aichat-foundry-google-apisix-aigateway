@@ -1,0 +1,160 @@
+@APISIX_ADMIN_KEY=edd1c9f034335f136f87ad84b625c8f1
+@CLIENT_API_KEY=abcdefghijk2026xyz
+@ROUTE_APISIX_VSCODE_GOOGLE=/vscode/google-ai/gemini-3.5-flash
+@VERTEX_MODEL_NAME=gemini-3.5-flash
+@VERTEX_PROJECT_ID=PROJECT_ID
+@VERTEX_CLIENT_EMAIL=CLIENT_EMAIL
+@VERTEX_PRIVATE_KEY_ID=PRIVATE_KEY_ID
+@VERTEX_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nPRIVATE_KEY_CONTENT\n-----END PRIVATE KEY-----\n
+
+
+
+###
+###
+# set_ngx_var = true -> APISIX vai permitir setar no trace o conteúdo de variáveis do Nginx (base do APISIX)
+# PASSO 1: Configurar traces do APISIX para OpenTelemetry
+curl http://127.0.0.1:9180/apisix/admin/plugin_metadata/opentelemetry -H "X-API-KEY: {{APISIX_ADMIN_KEY}}" -X PUT -d '
+{
+    "trace_id_source": "x-request-id",
+    "resource": {
+      "service.name": "APISIX",
+      "deployment.environment.name": "development"
+    },
+    "collector": {
+      "address": "alloy:4318",
+      "request_timeout": 3,
+      "request_headers": {
+      }
+    },
+    "batch_span_processor": {
+      "drop_on_queue_full": false,
+      "max_queue_size": 1024,
+      "batch_timeout": 2,
+      "inactive_timeout": 1,
+      "max_export_batch_size": 16
+    },
+    "set_ngx_var": true
+}'
+
+
+###
+# PASSO 2: Criar o Consumer com a API Key para uso no VS Code.
+curl "http://127.0.0.1:9180/apisix/admin/consumers" -X PUT \
+  -H "X-API-KEY: {{APISIX_ADMIN_KEY}}" \
+  -d '{
+    "username": "vscodechatai",
+    "plugins": {
+      "key-auth": {
+        "key": "{{CLIENT_API_KEY}}"
+      }
+    }
+  }'
+
+
+###
+
+# PASSO 3: Rota para o VS Code utilizar o Google Agent Platform/Google Vertex.
+curl "http://127.0.0.1:9180/apisix/admin/routes" -X PUT \
+  -H "X-API-KEY: {{APISIX_ADMIN_KEY}}" \
+  -d '{
+    "id": "google-ai-vertex-vscode",
+    "uri": "{{ROUTE_APISIX_VSCODE_GOOGLE}}/*",
+    "methods": ["POST"],
+    "plugins": {
+      "key-auth": {},
+      "consumer-restriction": {
+          "whitelist": [
+              "vscodechatai"
+          ]
+      },
+      "serverless-post-function": {
+        "_meta": {
+          "priority": 12010
+        },
+        "phase": "log",
+        "functions": [
+          "return function(conf, ctx)\n  local cjson = require(\"cjson.safe\")\n  local body = cjson.decode(ctx.var.resp_body or \"\") or {}\n  local usage = body.usage or {}\n  local choice = (body.choices and body.choices[1]) or {}\n  local finish = choice.finish_reason or \"\"\n  local req_model = ctx.var.request_llm_model\n  if not req_model or req_model == \"\" then req_model = ctx.var.llm_model or \"\" end\n\n  ctx.var[\"gen_ai.operation.name\"] = \"chat\"\n  ctx.var[\"gen_ai.provider.name\"] = \"gcp.vertex_ai\"\n  ctx.var[\"gen_ai.request.model\"] = req_model\n  ctx.var[\"gen_ai.response.model\"] = body.model or ctx.var.llm_model or \"\"\n  ctx.var[\"gen_ai.response.id\"] = body.id or \"\"\n  ctx.var[\"gen_ai.response.finish_reasons\"] = finish\n  ctx.var[\"gen_ai.usage.input_tokens\"] = tostring(usage.prompt_tokens or ctx.var.llm_prompt_tokens or 0)\n  ctx.var[\"gen_ai.usage.output_tokens\"] = tostring(usage.completion_tokens or ctx.var.llm_completion_tokens or 0)\n  ctx.var[\"gen_ai.usage.cache_read.input_tokens\"] = tostring((usage.prompt_tokens_details and usage.prompt_tokens_details.cached_tokens) or 0)\n  ctx.var[\"gen_ai.usage.reasoning.output_tokens\"] = tostring((usage.completion_tokens_details and usage.completion_tokens_details.reasoning_tokens) or 0)\n  ctx.var[\"server.address\"] = ctx.var.upstream_host or \"\"\n  ctx.var[\"server.port\"] = \"443\"\nend"
+        ]
+      },
+      "opentelemetry": {
+        "sampler": {
+          "name": "always_on"
+        },
+        "additional_attributes": [
+            "consumer_name",
+            "request_uri",
+            "hostname",
+            "location",
+            "upstream_scheme",
+            "upstream_host",
+            "upstream_uri",
+            "upstream_addr",
+            "server_addr",
+            "server_port",
+            "request_method",
+            "request_length",
+            "request_time",
+            "status",
+            "body_bytes_sent",
+            "request_body",
+            "resp_body",
+            "llm_model",
+            "request_llm_model",
+            "llm_prompt_tokens",
+            "llm_completion_tokens",
+            "llm_time_to_first_token",
+            "gen_ai.system",
+            "gen_ai.operation.name",
+            "gen_ai.provider.name",
+            "gen_ai.request.model",
+            "gen_ai.response.model",
+            "gen_ai.response.id",
+            "gen_ai.response.finish_reasons",
+            "gen_ai.usage.input_tokens",
+            "gen_ai.usage.output_tokens",
+            "gen_ai.usage.cache_read.input_tokens",
+            "gen_ai.usage.reasoning.output_tokens",
+            "server.address",
+            "server.port"
+        ]
+      },
+      "ai-proxy": {
+        "provider": "vertex-ai",
+        "auth": {
+          "gcp": {
+            "service_account_json": "{\"type\":\"service_account\",\"project_id\":\"{{VERTEX_PROJECT_ID}}\",\"private_key_id\":\"{{VERTEX_PRIVATE_KEY_ID}}\",\"private_key\":\"{{VERTEX_PRIVATE_KEY}}\",\"client_email\":\"{{VERTEX_CLIENT_EMAIL}}\"}"
+          },
+          "header": {
+            "Accept-Encoding": "identity"
+          }
+        },
+        "options":{
+          "model": "google/{{VERTEX_MODEL_NAME}}"
+        },
+        "override": {
+          "endpoint": "https://aiplatform.googleapis.com/v1/projects/{{VERTEX_PROJECT_ID}}/locations/global/endpoints/openapi/chat/completions"
+        }
+      }
+    },
+    "upstream": {
+      "type": "roundrobin",
+      "nodes": {
+        "://googleapis.com": 1
+      },
+      "scheme": "https"
+    }
+  }'
+
+
+###
+# PASSO 4: Testes
+# Simula o uso do modelo Gemini 3.5 Flash via API local
+curl http://localhost:9080/vscode/google-ai/gemini-3.5-flash/ \
+  -X POST \
+  -H "apiKey: {{CLIENT_API_KEY}}" \
+  -H "Content-Type: application/json" \
+  -d '{
+       "messages": [
+         {"role": "user", "content": "Explique o que é C# em poucas palavras..."}
+       ]
+  }'
