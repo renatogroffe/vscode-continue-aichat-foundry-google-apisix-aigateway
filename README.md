@@ -16,7 +16,7 @@ name: Main Config
 version: 1.0.0
 schema: v1
 models:
-  - name: "gpt-5.5 Microsoft Foundry (AI Gateway)"
+  - name: "gpt-5.5 Microsoft Foundry"
     provider: azure
     model: "gpt-5.5"
     apiBase: "https://FOUNDRY_RESOURCE_NAME.services.ai.azure.com/"
@@ -38,3 +38,9 @@ models:
       - edit
       - apply
 ```
+
+Um teste com um modelo do Microsoft Foundry:
+
+![Testes com Microsoft Foundry](img/vscode-03.png)
+
+Um teste com um modelo da Google acessado via APISIX (AI Gateway):
