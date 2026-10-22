@@ -44,3 +44,5 @@ Um teste com um modelo do Microsoft Foundry:
 ![Testes com Microsoft Foundry](img/vscode-03.png)
 
 Um teste com um modelo da Google acessado via APISIX (AI Gateway):
+
+![Testes com Gemini](img/vscode-04.png)
